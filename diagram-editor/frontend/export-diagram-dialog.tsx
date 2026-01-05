@@ -8,6 +8,7 @@ import {
   Stack,
   TextField,
   Typography,
+  useTheme,
 } from '@mui/material';
 import { deflateSync, strToU8 } from 'fflate';
 import React, { Suspense, use, useMemo } from 'react';
@@ -41,6 +42,7 @@ function ExportDiagramDialogInternal({
   const registry = useRegistry();
   const loadContext = useLoadContext();
   const [diagramProperties] = useDiagramProperties();
+  const theme = useTheme();
 
   const dialogDataPromise = useMemo(async () => {
     const diagram = exportDiagram(registry, nodeManager, edges, templates, diagramProperties ?? {});
@@ -75,7 +77,9 @@ function ExportDiagramDialogInternal({
 
   const dialogData = use(dialogDataPromise);
 
-  const handleDownload = () => {
+  const [downloaded, setDownloaded] = React.useState(false);
+
+  const handleDownload = async () => {
     if (!dialogData) {
       return;
     }
@@ -83,6 +87,33 @@ function ExportDiagramDialogInternal({
     const blob = new Blob([dialogData.diagramJson], {
       type: 'application/json',
     });
+
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: 'diagram.json',
+          types: [
+            {
+              description: 'JSON File',
+              accept: { 'application/json': ['.json'] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        setDownloaded(true);
+        setTimeout(() => { setDownloaded(false); }, 5000);
+        return;
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    // The showSaveFilePicker API might not be supported in some browsers,
+    // fallback to the default method of downloading if it fails.
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -91,6 +122,9 @@ function ExportDiagramDialogInternal({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+
+    setDownloaded(true);
+    setTimeout(() => { setDownloaded(false); }, 5000);
   };
 
   const [copiedShareLink, setCopiedShareLink] = React.useState(false);
@@ -140,9 +174,16 @@ function ExportDiagramDialogInternal({
             <Button
               variant="contained"
               onClick={handleDownload}
-              startIcon={<MaterialSymbol symbol="download" />}
+              startIcon={downloaded ? (
+                <MaterialSymbol symbol="check_circle" />
+              ) : (
+                <MaterialSymbol symbol="download" />
+              )}
+              sx={{
+                backgroundColor: downloaded ? theme.palette.success.main : null,
+              }}
             >
-              Download
+              {downloaded ? 'Downloaded' : 'Download'}
             </Button>
           </Stack>
           <TextField
